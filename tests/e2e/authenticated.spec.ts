@@ -34,7 +34,7 @@ test("registered session can manage records, persist, export and logout",async({
  await page.getByLabel("邮箱",{exact:true}).fill("fitness@example.invalid");
  await page.locator('input[name="password"]').fill("synthetic-password-123");
  await page.getByRole("button",{name:"登录",exact:true}).click();
- await expect(page.getByText("个人空间",{exact:true})).toBeVisible();
+ await expect(page.getByRole("button",{name:"退出登录"})).toBeVisible();
  await page.getByRole("button",{name:/身体数据/}).first().click();
  await page.getByRole("button",{name:/记录身体数据/}).click();
  await page.getByLabel("体重 kg",{exact:true}).fill("80");
