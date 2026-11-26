@@ -36,3 +36,12 @@ https://api-docs.siliconflow.cn/docs/legals/privacy-policy
 Automated tests use synthetic images and mocked provider replies, never a real key or personal health data. They cover auth/configuration, consent, payload bounds, quota failures, fixed model/no fallback, provider errors, response validation, serving arithmetic and mobile/desktop review/edit/save. SQL tests check counter access, cooldown, per-user/global limits and account deletion.
 
 Real provider access, account billing and meal-photo estimate quality must be verified on the owner's account before considering this feature accepted. iOS currently displays saved food records; native camera analysis is a future client for the same authenticated endpoint, not included in this web change.
+
+## Slow response handling
+
+The upstream deadline is 120 seconds (previously 45); the Vercel function ceiling is 150 seconds. This fits Hobby's 300-second maximum with Fluid Compute, which is enabled by default on new projects:
+https://vercel.com/docs/functions/configuring-functions/duration
+
+No paid plan, model change or automatic retry is introduced. Requests still count toward the existing limits. Longer waiting consumes more of the hosting plan's included runtime allowance; it does not bypass that allowance.
+
+Timeouts now return HTTP 504 and PROVIDER_TIMEOUT; connection failures return a safe code such as ENOTFOUND or PROVIDER_NETWORK. Runtime logs contain only stage, allowlisted code and elapsed milliseconds, never raw exception messages, photos, keys, user IDs, prompts or model output. This improves diagnosis; it does not establish that all live provider latency/network issues are resolved. A fresh live photo test is still required.

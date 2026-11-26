@@ -1,5 +1,5 @@
 import { describe,it,expect,vi } from "vitest";
-import { handleMealPhoto } from "../src/lib/meal-photo-handler";
+import { handleMealPhoto, MEAL_TIMEOUT_MS, providerFailureCode } from "../src/lib/meal-photo-handler";
 import { FREE_MEAL_MODEL,mealEstimateSchema,personalMeal,validatePhoto } from "../src/lib/meal-photo";
 
 const estimate={food_detected:true,dishes:[{name:"测试餐",grams:600,calories:1200,protein:60,carbs:150,fat:40}],uncertainty:"重量和用油不确定"};
@@ -9,8 +9,9 @@ const env={enabled:"true",key:"synthetic-private-key",url:"https://fixture.inval
 function setup({allowed=true,authenticated=true}={}) {
  const consume=vi.fn(async()=>allowed);
  const authorize=vi.fn(async()=>({authenticated,consume}));
- const fetch=vi.fn(async()=>Response.json({model:FREE_MEAL_MODEL,choices:[{finish_reason:"stop",message:{content:JSON.stringify(estimate)}}]}));
- return {deps:{env,authorize,fetch},consume,authorize,fetch};
+ const fetch=vi.fn<typeof globalThis.fetch>(async()=>Response.json({model:FREE_MEAL_MODEL,choices:[{finish_reason:"stop",message:{content:JSON.stringify(estimate)}}]}));
+ const log=vi.fn();
+ return {deps:{env,authorize,fetch,log},consume,authorize,fetch,log};
 }
 const request=(body:unknown={image,diners:2,consent:true},token=true)=>new Request("https://fixture.invalid/api/meal-photo",{
  method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer synthetic-jwt"}:{})},body:JSON.stringify(body)});
@@ -64,7 +65,7 @@ describe("meal photo security and provider isolation",()=>{
   for(const status of [401,402,429,500]) {
    const s=setup();s.fetch.mockResolvedValueOnce(new Response("synthetic-private-key provider error",{status}));
    const result=await handleMealPhoto(request(),s.deps);
-   expect(result.status).toBe(status===429?429:502);
+   expect(result.status).toBe(status===401?503:status===429?429:502);
    expect(await result.text()).not.toContain("synthetic-private-key");
    expect(s.fetch).toHaveBeenCalledTimes(1);
   }
@@ -103,5 +104,59 @@ describe("nutrition and image validation",()=>{
   expect(personalMeal(parsed,3)).toMatchObject({calories:500,protein:24,carbs:56,fat:15.3});
   expect(()=>personalMeal(parsed,0)).toThrow();
   expect(()=>mealEstimateSchema.parse({...estimate,food_detected:false})).toThrow();
+ });
+});
+
+describe("slow provider regression",()=>{
+ it("waits beyond the old 45-second cutoff, and aborts at 120 seconds",async()=>{
+  vi.useFakeTimers();
+  const timeout=vi.spyOn(AbortSignal,"timeout").mockImplementation(ms=>{
+   const controller=new AbortController();
+   setTimeout(()=>controller.abort(new DOMException("Timed out","TimeoutError")),ms);
+   return controller.signal;
+  });
+  try {
+   const s=setup();
+   s.fetch.mockImplementationOnce(async(_url,options)=>new Promise((_resolve,reject)=>{
+    options!.signal!.addEventListener("abort",()=>reject(options!.signal!.reason),{once:true});
+   }));
+   let settled=false;
+   const result=handleMealPhoto(request(),s.deps).then(r=>{settled=true;return r;});
+   // Let body reading/auth/JSON validation finish before the first advance.
+   await vi.advanceTimersByTimeAsync(0);
+   expect(timeout).toHaveBeenCalledWith(120_000);
+   expect(MEAL_TIMEOUT_MS).toBe(120_000);
+   await vi.advanceTimersByTimeAsync(46_000);
+   expect(settled).toBe(false);
+   await vi.advanceTimersByTimeAsync(74_000);
+   const response=await result;
+   expect(response.status).toBe(504);
+   expect(await response.text()).toContain("PROVIDER_TIMEOUT");
+   expect(s.fetch).toHaveBeenCalledTimes(1);
+   expect(s.log).toHaveBeenCalledWith({event:"meal_photo_failure",stage:"connect",code:"PROVIDER_TIMEOUT",elapsedMs:120_000});
+  } finally {timeout.mockRestore();vi.useRealTimers();}
+ });
+ it("trims harmless surrounding key whitespace without sending invalid headers",async()=>{
+  const s=setup();
+  expect((await handleMealPhoto(request(),{...s.deps,env:{...env,key:"  synthetic-private-key\n"}})).status).toBe(200);
+  expect(new Headers(s.fetch.mock.calls[0][1]?.headers).get("authorization")).toBe("Bearer synthetic-private-key");
+  s.fetch.mockClear();
+  expect((await handleMealPhoto(request(),{...s.deps,env:{...env,key:"bad\nheader"}})).status).toBe(503);
+  expect(s.fetch).not.toHaveBeenCalled();
+ });
+ it("reports body timeouts and logs only whitelisted metadata",async()=>{
+  const s=setup(),secret="synthetic-private-key secret-photo-content";
+  const error=Object.assign(new Error(secret),{name:"TimeoutError",cause:{code:secret}});
+  s.fetch.mockResolvedValueOnce({ok:true,json:async()=>{throw error;}} as unknown as Response);
+  const response=await handleMealPhoto(request(),s.deps);
+  expect(response.status).toBe(504);
+  expect(JSON.stringify(s.log.mock.calls)).not.toContain(secret);
+  expect(await response.text()).not.toContain(secret);
+  expect(s.log.mock.calls[0][0]).toMatchObject({stage:"read",code:"PROVIDER_TIMEOUT"});
+ });
+ it("recognizes DNS/connect failures without leaking untrusted error strings",()=>{
+  expect(providerFailureCode({cause:{code:"ENOTFOUND"}})).toBe("ENOTFOUND");
+  expect(providerFailureCode({cause:{code:"UND_ERR_CONNECT_TIMEOUT"}})).toBe("UND_ERR_CONNECT_TIMEOUT");
+  expect(providerFailureCode({name:"SecretToken",message:"secret",code:"secret"})).toBe("PROVIDER_NETWORK");
  });
 });
