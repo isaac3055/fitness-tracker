@@ -20,6 +20,8 @@ jobs:
       - name: Resolve initial dependency lock if absent
         run: |
           if [ ! -f package-lock.json ]; then npm install --package-lock-only; fi
+      - name: Capture initial dependency manifest
+        run: node -e "console.log('LOCKFILE_DATA='+JSON.stringify(require('./package-lock.json')))"
       - run: npm ci
       - name: Dependency audit
         run: npm audit --audit-level=high
@@ -74,6 +76,7 @@ jobs:
         run: psql -h localhost -U postgres -d fitness_test -v ON_ERROR_STOP=1 -f supabase/tests/rls.sql
   ios:
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
