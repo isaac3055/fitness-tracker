@@ -57,6 +57,37 @@ test("registered session can manage records, persist, export and logout",async({
  page.once("dialog",dialog=>dialog.accept());
  await page.getByRole("button",{name:"删除",exact:true}).click();
  await expect(page.getByText("虚构测试餐 1 份",{exact:true})).toHaveCount(0);
+ // Synthetic photo and mocked provider response; no real photos or API credentials.
+ let photoCalls=0;
+ await page.route("**/api/meal-photo",async route=>{
+  photoCalls++;const body=route.request().postDataJSON();
+  expect(body.diners).toBe(2);expect(body.consent).toBe(true);
+  expect(body.image).toMatch(/^data:image\/jpeg;base64,/);
+  await route.fulfill({json:{estimate:{food_detected:true,dishes:[{name:"虚构照片餐",grams:600,calories:1200,protein:60,carbs:150,fat:40}],uncertainty:"仅为虚构测试估算"}}});
+ });
+ await page.locator('input[type="file"]').last().setInputFiles({
+  name:"synthetic.png",mimeType:"image/png",
+  buffer:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aMioAAAAASUVORK5CYII=","base64")
+ });
+ await expect(page.getByAltText("待分析的饮食照片")).toBeVisible();
+ await page.getByLabel("几人分食").selectOption("2");
+ await expect(page.getByRole("button",{name:"智能分析照片"})).toBeDisabled();
+ expect(photoCalls).toBe(0);
+ await page.getByRole("checkbox").check();
+ await page.getByRole("button",{name:"智能分析照片"}).click();
+ await expect(page.getByText("约 600 kcal",{exact:true})).toBeVisible();
+ expect(db.food_entries).toHaveLength(0);
+ await page.getByRole("button",{name:"填入记录，检查后保存"}).click();
+ await expect(page.getByLabel("热量 kcal",{exact:true})).toHaveValue("600");
+ await expect(page.getByLabel("蛋白质 g",{exact:true})).toHaveValue("30");
+ await page.getByLabel("热量 kcal",{exact:true}).fill("550");
+ await page.getByRole("button",{name:"保存记录"}).click();
+ await expect(page.getByText("虚构照片餐（照片估算，2人均分）",{exact:true})).toBeVisible();
+ expect(photoCalls).toBe(1);
+ expect(db.food_entries[0].calories).toBe(550);
+ page.once("dialog",dialog=>dialog.accept());
+ await page.getByRole("button",{name:"删除",exact:true}).click();
+ await expect(page.getByText("虚构照片餐（照片估算，2人均分）",{exact:true})).toHaveCount(0);
  await page.getByRole("button",{name:/设置与同步/}).click();
  const download=page.waitForEvent("download");
  await page.getByRole("button",{name:"导出我的数据"}).click();

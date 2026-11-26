@@ -70,6 +70,10 @@ jobs:
         run: psql -h localhost -U postgres -d fitness_test -v ON_ERROR_STOP=1 -f supabase/tests/bootstrap.sql
       - name: Apply production migration
         run: psql -h localhost -U postgres -d fitness_test -v ON_ERROR_STOP=1 -f supabase/migrations/202611260001_initial.sql
+      - name: Apply photo quota migration
+        run: psql -h localhost -U postgres -d fitness_test -v ON_ERROR_STOP=1 -f supabase/migrations/202611260002_meal_photo_quota.sql
+      - name: Verify photo quota permissions and limits
+        run: psql -h localhost -U postgres -d fitness_test -v ON_ERROR_STOP=1 -f supabase/tests/meal_photo_quota.sql
       - name: Verify tenant isolation, deletion and sync idempotency
         run: psql -h localhost -U postgres -d fitness_test -v ON_ERROR_STOP=1 -f supabase/tests/rls.sql
   ios:
