@@ -1,0 +1,21 @@
+import { test, expect } from "@playwright/test";
+test("unconfigured app has explicit auth gate and isolated demo",async({page})=>{
+ await page.goto("/");
+ await expect(page.getByRole("heading",{name:/每一点改变/})).toBeVisible();
+ await expect(page.getByRole("button",{name:"登录",exact:true})).toBeDisabled();
+ await page.getByRole("button",{name:/查看演示/}).click();
+ await expect(page.getByText(/所有数据均为虚构/)).toBeVisible();
+ await page.getByRole("button",{name:/身体数据/,exact:false}).first().click();
+ await expect(page.getByRole("button",{name:/记录身体数据/})).toBeDisabled();
+ await page.getByRole("button",{name:/训练计划/}).first().click();
+ await expect(page.getByText("默认周一、周五休息；其余日程可自由编辑。")).toBeVisible();
+ await page.getByRole("button",{name:/饮食记录/}).first().click();
+ await expect(page.getByText("示例：鸡蛋、牛奶、燕麦")).toBeVisible();
+ await page.getByRole("button",{name:/数据分析/}).click();
+ await expect(page.getByRole("table")).toBeVisible();
+ await page.getByRole("button",{name:/设置与同步/}).click();
+ await expect(page.getByText(/网页无法直接读取 HealthKit/)).toBeVisible();
+ await expect(page.getByRole("button",{name:"导出我的数据"})).toBeDisabled();
+ await page.getByRole("button",{name:"退出演示"}).click();
+ await expect(page.getByRole("heading",{name:/每一点改变/})).toBeVisible();
+});
