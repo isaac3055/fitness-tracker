@@ -3,11 +3,24 @@ import { FREE_MEAL_MODEL, MEAL_PROMPT, mealRequestSchema, mealEstimateSchema, pe
 
 type Env={enabled?:string;key?:string;url?:string;publicKey?:string};
 type Access={authenticated:boolean;consume:()=>Promise<boolean>};
-type Dependencies={env:Env;fetch:typeof fetch;authorize:(token:string)=>Promise<Access>};
+type Diagnostic={event:"meal_photo_failure";stage:"connect"|"read"|"http";code:string;elapsedMs:number};
+type Dependencies={env:Env;fetch:typeof fetch;authorize:(token:string)=>Promise<Access>;log?:(entry:Diagnostic)=>void};
+// Below the 150s function limit, leaving time for authentication and response handling.
+export const MEAL_TIMEOUT_MS=120_000;
+export function providerFailureCode(error:unknown):string {
+ const value=error as {name?:unknown;code?:unknown;cause?:{code?:unknown}};
+ if(value?.name==="TimeoutError"||value?.name==="AbortError")return "PROVIDER_TIMEOUT";
+ const code=value?.cause?.code??value?.code;
+ return typeof code==="string" && ["ENOTFOUND","EAI_AGAIN","ECONNRESET","ECONNREFUSED","ETIMEDOUT","UND_ERR_CONNECT_TIMEOUT","UND_ERR_HEADERS_TIMEOUT","UND_ERR_SOCKET"].includes(code)
+  ? code : "PROVIDER_NETWORK";
+}
 const response=(status:number,error:string)=>Response.json({error},{status,headers:{"Cache-Control":"no-store"}});
 export async function handleMealPhoto(request:Request,deps:Dependencies):Promise<Response> {
  if(deps.env.enabled!=="true" || !deps.env.key || !deps.env.url || !deps.env.publicKey)
   return response(503,"拍照分析尚未启用，请先使用手动记录。");
+ const apiKey=deps.env.key.trim();
+ if(!apiKey || /[^!-~]/.test(apiKey))
+  return response(503,"服务端 API 密钥格式无效，请检查 Vercel 中的 SILICONFLOW_API_KEY。");
  const token=request.headers.get("authorization")?.match(/^Bearer ([^\s]+)$/)?.[1];
  if(!token)return response(401,"请先登录。");
  let access:Access;
@@ -26,11 +39,22 @@ export async function handleMealPhoto(request:Request,deps:Dependencies):Promise
   let allowed=false;
   try {allowed=await access.consume();}catch{return response(503,"拍照分析限额尚未配置，请先使用手动记录。");}
   if(!allowed)return response(429,"已达到分析次数限制，或操作过快。每人每天最多10次、全站100次，间隔至少10秒。");
+  const started=Date.now();
+  const report=(stage:Diagnostic["stage"],code:string)=>{
+   // Never log error.message/cause, tokens, photos, prompts or provider output.
+   try {deps.log?.({event:"meal_photo_failure",stage,code,elapsedMs:Math.max(0,Date.now()-started)});}catch{/* Logging cannot affect the response. */}
+  };
+  const networkFailure=(error:unknown,stage:"connect"|"read")=>{
+   const code=providerFailureCode(error);report(stage,code);
+   return code==="PROVIDER_TIMEOUT"
+    ? response(504,"免费模型在120秒内未完成响应（PROVIDER_TIMEOUT）。未保存记录，也未自动重试；可稍后重试或手动记录。")
+    : response(502,"服务器连接免费模型失败（"+code+"）。照片仍在本页，请稍后重试。");
+  };
   let upstream:Response;
   try {
    upstream=await deps.fetch("https://api.siliconflow.cn/v1/chat/completions",{
-    method:"POST",redirect:"error",signal:AbortSignal.timeout(45000),
-    headers:{"Authorization":"Bearer "+deps.env.key,"Content-Type":"application/json"},
+    method:"POST",redirect:"error",signal:AbortSignal.timeout(MEAL_TIMEOUT_MS),
+    headers:{"Authorization":"Bearer "+apiKey,"Content-Type":"application/json"},
     body:JSON.stringify({
      model:FREE_MEAL_MODEL,stream:false,enable_thinking:false,max_tokens:1800,
      response_format:{type:"json_object"},
@@ -40,10 +64,15 @@ export async function handleMealPhoto(request:Request,deps:Dependencies):Promise
      ]}]
     })
    });
-  }catch{return response(502,"免费分析暂时不可用或超时，照片仍在本页，可稍后重试或手动记录。");}
-  if(!upstream.ok)return response(upstream.status===429?429:502,"免费模型暂时不可用；未切换至其他模型，请稍后重试或手动记录。");
+  }catch(error){return networkFailure(error,"connect");}
+  if(!upstream.ok){
+   report("http","PROVIDER_HTTP_"+upstream.status);
+   if(upstream.status===401||upstream.status===403)return response(503,"模型服务拒绝访问（PROVIDER_HTTP_"+upstream.status+"），请检查 API 密钥与模型权限。");
+   return response(upstream.status===429?429:502,"免费模型暂时不可用（PROVIDER_HTTP_"+upstream.status+"）；未切换至其他模型，请稍后重试或手动记录。");
+  }
+  let output;
+  try {output=await upstream.json();}catch(error){return networkFailure(error,"read");}
   try {
-   const output=await upstream.json();
    if(output.model!==FREE_MEAL_MODEL || output.choices?.[0]?.finish_reason!=="stop")throw new Error("Incomplete response");
    const text=output.choices?.[0]?.message?.content;
    if(typeof text!=="string"||text.length>20000)throw new Error("Invalid response");
@@ -59,7 +88,7 @@ export async function handleMealPhoto(request:Request,deps:Dependencies):Promise
 export function productionDependencies():Dependencies {
  const env={enabled:process.env.MEAL_PHOTO_ENABLED,key:process.env.SILICONFLOW_API_KEY,
   url:process.env.NEXT_PUBLIC_SUPABASE_URL,publicKey:process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY};
- return {env,fetch:globalThis.fetch,authorize:async token=>{
+ return {env,fetch:globalThis.fetch,log:entry=>console.warn(JSON.stringify(entry)),authorize:async token=>{
   const client=createClient(env.url!,env.publicKey!,{global:{headers:{Authorization:"Bearer "+token}},
    auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
   const {data,error}=await client.auth.getUser(token);
