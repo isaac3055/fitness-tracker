@@ -101,6 +101,14 @@ struct HomeView: View {
  }
  var body: some View {
   TabView {
+   overviewContent.tabItem { Label("概览",systemImage:"chart.xyaxis.line") }
+   healthContent.tabItem { Label("健康同步",systemImage:"heart") }
+   NavigationStack { PrivacyView(rows:rows).disabled(health.busy || loading) }.tabItem { Label("账号",systemImage:"person.crop.circle") }
+  }.onChange(of:phase) { _,value in
+   if value == .active { Task { if syncConsent { await health.sync(api:api) };await reload() } }
+  }
+ }
+ private var overviewContent: some View {
    NavigationStack {
     List {
      Section("今日概览 · "+today) {
@@ -125,7 +133,9 @@ struct HomeView: View {
      }
      if !message.isEmpty { Section { Text(message).foregroundStyle(.secondary) } }
     }.navigationTitle("健康有迹可循").refreshable { await reload() }.task { await reload() }
-   }.tabItem { Label("概览",systemImage:"chart.xyaxis.line") }
+   }
+ }
+ private var healthContent: some View {
    NavigationStack {
     Form {
      Section("Apple HealthKit") {
@@ -149,25 +159,11 @@ struct HomeView: View {
       LabeledContent("运动分钟",value:current?.text("exercise_minutes") ?? "—")
       LabeledContent("平均心率 bpm",value:current?.text("heart_rate") ?? "—")
      }
-     Section("已同步身体测量") {
-      ForEach((rows["health_measurements"] ?? []).sorted{$0.text("measured_at")>$1.text("measured_at")}.prefix(30).map{$0}) { row in
-       Text(row.text("logged_on")+" · "+(row.text("weight_kg").isEmpty ? "体脂 "+row.text("body_fat_percent")+"%":row.text("weight_kg")+" kg"))
-      }
-     }
-     Section("最近训练") {
-      ForEach((rows["health_workouts"] ?? []).sorted{$0.text("started_at")>$1.text("started_at")}.prefix(30).map{$0}) { row in
-       Text(row.text("logged_on")+" · "+activityName(row.text("activity_type"))+" · "+row.text("duration_minutes")+" min")
-      }
-     }
+     ImportedMeasurements(rows:rows["health_measurements"] ?? [])
+     ImportedWorkouts(rows:rows["health_workouts"] ?? [])
      if !message.isEmpty { Section { Text(message) } }
     }.navigationTitle("健康同步")
-   }.tabItem { Label("健康同步",systemImage:"heart") }
-   NavigationStack { PrivacyView(rows:rows).disabled(health.busy || loading) }.tabItem { Label("账号",systemImage:"person.crop.circle") }
-  }.onChange(of:phase) { _,value in
-   if value == .active {
-    Task { if syncConsent { await health.sync(api:api) };await reload() }
    }
-  }
  }
  private func reload() async {
   guard !loading else{return};loading=true;defer{loading=false}
@@ -363,5 +359,28 @@ func activityName(_ raw:String) -> String {
  case .swimming:return "游泳"
  case .yoga:return "瑜伽"
  default:return "其他训练"
+ }
+}
+
+struct ImportedMeasurements: View {
+ let rows:[JSONRow]
+ private var recent:[JSONRow] { Array(rows.sorted(by:{$0.text("measured_at")>$1.text("measured_at")}).prefix(30)) }
+ private func label(_ row:JSONRow) -> String {
+  let measurement=row.text("weight_kg").isEmpty ? "体脂 \(row.text("body_fat_percent"))%" : "\(row.text("weight_kg")) kg"
+  return row.text("logged_on")+" · "+measurement
+ }
+ var body: some View {
+  Section("已同步身体测量") { ForEach(recent) { row in Text(label(row)) } }
+ }
+}
+struct ImportedWorkouts: View {
+ let rows:[JSONRow]
+ private var recent:[JSONRow] { Array(rows.sorted(by:{$0.text("started_at")>$1.text("started_at")}).prefix(30)) }
+ private func label(_ row:JSONRow) -> String {
+  let name=activityName(row.text("activity_type"))
+  return "\(row.text("logged_on")) · \(name) · \(row.text("duration_minutes")) min"
+ }
+ var body: some View {
+  Section("最近训练") { ForEach(recent) { row in Text(label(row)) } }
  }
 }
