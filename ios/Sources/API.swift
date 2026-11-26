@@ -43,6 +43,7 @@ struct JSONRow: Identifiable {
 }
 @MainActor final class API: ObservableObject {
  @Published var session: AuthSession?
+ private var refreshTask: Task<Data,Error>?
  let base: String
  let key: String
  var configured: Bool { base.hasPrefix("https://") && !base.contains("YOUR_") && !key.contains("YOUR_") && !key.isEmpty }
@@ -79,7 +80,12 @@ struct JSONRow: Identifiable {
  func refreshIfNeeded() async throws {
   guard let current=session else { throw TrackerError.message("请登录") }
   if (current.expires_at ?? 0)>Date().timeIntervalSince1970+90 { return }
-  let data=try await request("/auth/v1/token?grant_type=refresh_token",method:"POST",body:["refresh_token":current.refresh_token],authenticated:false)
+  if let refreshTask { let data=try await refreshTask.value;try accept(data);return }
+  let task=Task { try await self.request("/auth/v1/token?grant_type=refresh_token",method:"POST",body:["refresh_token":current.refresh_token],authenticated:false) }
+  refreshTask=task
+  defer{refreshTask=nil}
+  let data=try await task.value
+  guard session?.user.id==current.user.id else { throw TrackerError.message("账号已切换") }
   try accept(data)
  }
  func login(email: String,password: String) async throws {

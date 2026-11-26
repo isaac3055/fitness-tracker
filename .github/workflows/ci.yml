@@ -17,6 +17,9 @@ jobs:
       - name: Resolve dependency lock
         run: npm install --package-lock-only
       - run: npm ci
+      - name: Dependency audit
+        run: npm audit
+        continue-on-error: true
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

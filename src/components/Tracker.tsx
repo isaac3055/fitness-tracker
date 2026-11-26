@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { configured, supabase } from "@/lib/supabase";
 import { dailySummary, dayOfWeek, defaultPlans, emptyData, localDate, schemas, weightTrend, type Data, type Row, type Table } from "@/lib/domain";
@@ -19,6 +19,7 @@ const tabs = [["today","概览","◈"],["body","身体数据","◉"],["training"
 const defaults: Record<string,string> = { height_cm:"175",goal_weight_kg:"70",calorie_target:"2100",protein_target:"120",timezone:"Asia/Shanghai",day_of_week:"2",meal:"早餐",calories:"0",protein:"0",carbs:"0",fat:"0" };
 
 export default function Tracker() {
+ const generation=useRef(0);
  const [session,setSession] = useState<Session|null>(null);
  const [ready,setReady] = useState(false);
  const [demo,setDemo] = useState(false);
@@ -32,9 +33,9 @@ export default function Tracker() {
  const [authMode,setAuthMode] = useState<"login"|"register"|"reset">("login");
  useEffect(()=>{
    if (!supabase) { setReady(true); return; }
-   supabase.auth.getSession().then(({data,error})=>{ if(error)setMessage(error.message);setSession(data.session);setReady(true); });
+   supabase.auth.getSession().then(({data,error})=>{ if(error)setMessage(error.message);generation.current++;setSession(data.session);setReady(true); });
    const {data:{subscription}} = supabase.auth.onAuthStateChange((event,current)=>{
-     setSession(current); setData(emptyData()); setEditing(null);
+     generation.current++;setSession(current); setData(emptyData()); setEditing(null);
      if(event==="PASSWORD_RECOVERY")setRecovery(true);
    });
    return ()=>subscription.unsubscribe();
@@ -43,6 +44,7 @@ export default function Tracker() {
    if (demo) { setData(demoData()); return; }
    if (!supabase || !session) return;
    const uid = session.user.id;
+   const ticket=++generation.current;
    const result = emptyData();
    for (const table of Object.keys(result) as (keyof Data)[]) {
      // Page through every row; no silent PostgREST 1,000-row truncation.
@@ -53,7 +55,7 @@ export default function Tracker() {
        if(rows.length<500)break;
      }
    }
-   setData(result);
+   if(ticket===generation.current)setData(result);
  },[session,demo]);
  useEffect(()=>{ load().catch(e=>setMessage(String(e))); },[load]);
  const run = async(action:()=>Promise<void>)=>{
@@ -80,7 +82,7 @@ export default function Tracker() {
    const parsed=schemas[editing.table].safeParse(raw);
    if(!parsed.success)throw new Error(parsed.error.issues.map(i=>i.path.join(".")+": "+i.message).join("；"));
    const table=editing.table;
-   const payload={...parsed.data,user_id:session.user.id,...(editing.row?{id:editing.row.id}:{})};
+   const payload: Record<string,unknown>={...parsed.data,user_id:session.user.id,...(editing.row?{id:editing.row.id}:{})};
    const conflict=table==="profiles"?"user_id":table==="body_measurements"||table==="daily_energy"?"user_id,logged_on":undefined;
    const query=editing.row
      ? supabase.from(table).update(parsed.data).eq("id",editing.row.id).eq("user_id",session.user.id)
@@ -95,6 +97,7 @@ export default function Tracker() {
    if(error)throw error;await load();
  }
  const profile=data.profiles[0];
+ useEffect(()=>{ if(typeof profile?.timezone==="string")setDate(localDate(new Date(),profile.timezone)); },[profile?.timezone]);
  const summary=dailySummary(data,date);
  const trend=weightTrend(data);
  const latest=trend.at(-1);
@@ -132,7 +135,7 @@ export default function Tracker() {
  </div><p className="auth-foot">你的健康记录，仅属于你。</p></main>;
  return <div className="app-shell">
    <aside className="sidebar"><a className="brand" href="/">◈ <span>FITNESS<br/><small>TRACKER</small></span></a><p className="nav-caption">我的健康空间</p><nav>{tabs.map(([key,label,icon])=><button key={key} className={tab===key?"nav-item active":"nav-item"} onClick={()=>{setTab(key);setEditing(null);}}><span>{icon}</span>{label}</button>)}</nav><div className="sidebar-foot"><span className="avatar">{demo?"D":session?.user.email?.[0]?.toUpperCase()}</span><div><strong>{demo?"演示访客":"个人空间"}</strong><small>{demo?"虚构数据 · 只读":"数据按账号隔离"}</small></div></div></aside>
-   <main className="workspace"><header className="topbar"><span>个人健康管理 / {tabs.find(t=>t[0]===tab)?.[1]}</span><button disabled={busy} onClick={()=>run(async()=>{setData(emptyData());setEditing(null);if(demo){setDemo(false);return;}const {error}=await supabase!.auth.signOut();if(error)throw error;})}>退出{demo?"演示":"登录"}</button></header>
+   <main className="workspace"><header className="topbar"><span>个人健康管理 / {tabs.find(t=>t[0]===tab)?.[1]}</span><button disabled={busy} onClick={()=>run(async()=>{generation.current++;setData(emptyData());setEditing(null);if(demo){setDemo(false);return;}const {error}=await supabase!.auth.signOut();if(error)throw error;})}>退出{demo?"演示":"登录"}</button></header>
    {demo&&<div className="demo-banner">演示模式 · 所有数据均为虚构，仅供体验界面，无法保存或同步。</div>}
    <div className="page-heading"><div><span className="eyebrow">MAKE PROGRESS, EVERY DAY</span><h1>{tabs.find(t=>t[0]===tab)?.[1]}</h1><p className="muted">照顾好自己，从记录今天开始。</p></div><label className="date-picker">记录日期<input aria-label="记录日期" type="date" value={date} onChange={e=>setDate(e.target.value||localDate())}/></label></div>
    {message&&<div role="status" className="notice">{message}</div>}
