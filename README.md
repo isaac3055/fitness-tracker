@@ -43,7 +43,7 @@ npm run dev
 ## 配置 Supabase
 
 1. 创建项目，在 SQL Editor 中执行 supabase/migrations/202611260001_initial.sql，或通过 Supabase CLI migrations 部署。
-2. 开启 Email/Password 登录，开启邮箱确认，设置最低密码长度 12；在生产环境配置 SMTP、Auth rate limits 和 CAPTCHA。
+2. 开启 Email/Password 登录，开启邮箱确认，设置最低密码长度 12；在生产环境配置 SMTP 与 Auth rate limits。V1 尚未集成 CAPTCHA 前端组件，启用服务端 CAPTCHA 前需另行接入。
 3. Auth → URL Configuration：Site URL 填网页生产地址；Redirect URLs 仅加入明确的开发/生产地址。重置密码邮件返回该站点。
 4. 将项目 URL 与 publishable/anon key 写入 Web 环境变量及 iOS 本地配置。无需任何 service-role 密钥。
 5. 通过真实的两个测试账号验证隔离与注册邮件。CI 的 PostgreSQL 测试只模拟 auth.uid，不能替代对托管 Auth 邮件与速率限制的验收。
