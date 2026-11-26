@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 test("unconfigured app has explicit auth gate and isolated demo",async({page})=>{
+ test.skip(process.env.E2E_AUTH === "1","Separate configured integration suite");
  await page.goto("/");
  await expect(page.getByRole("heading",{name:/每一点改变/})).toBeVisible();
  await expect(page.getByRole("button",{name:"登录",exact:true})).toBeDisabled();

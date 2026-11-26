@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   web:
     runs-on: ubuntu-latest
@@ -14,12 +17,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Resolve dependency lock
-        run: npm install --package-lock-only
+      - name: Resolve initial dependency lock if absent
+        run: |
+          if [ ! -f package-lock.json ]; then npm install --package-lock-only; fi
       - run: npm ci
       - name: Dependency audit
-        run: npm audit
-        continue-on-error: true
+        run: npm audit --audit-level=high
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -27,6 +30,16 @@ jobs:
           NEXT_TELEMETRY_DISABLED: "1"
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      - name: Build configured synthetic auth fixture
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_SUPABASE_URL: https://fitness-ci.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-public-placeholder
+      - name: Authenticated UI integration tests
+        run: npm run test:e2e
+        env:
+          E2E_AUTH: "1"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -76,3 +89,4 @@ jobs:
         with:
           name: ios-test-results
           path: ios/TestResults.xcresult
+
