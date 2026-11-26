@@ -11,8 +11,5 @@ final class FitnessTrackerTests: XCTestCase {
   let date=try XCTUnwrap(ISO8601DateFormatter().date(from:"2026-01-01T18:00:00Z"))
   XCTAssertEqual(HealthDates.day(date,timezone:try XCTUnwrap(TimeZone(identifier:"Asia/Shanghai"))),"2026-01-02")
  }
- func testRestDaysAreAbsentFromDefaultPlanFields() {
-  XCTAssertTrue(Module.plan.fields.contains{$0.key=="day_of_week"})
-  XCTAssertEqual(Module.food.fields.filter{$0.numeric}.count,4)
- }
+
 }

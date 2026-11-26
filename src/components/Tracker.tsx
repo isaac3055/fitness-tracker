@@ -97,7 +97,7 @@ export default function Tracker() {
    if(error)throw error;await load();
  }
  const profile=data.profiles[0];
- useEffect(()=>{ if(typeof profile?.timezone==="string")setDate(localDate(new Date(),profile.timezone)); },[profile?.timezone]);
+ useEffect(()=>{ if(typeof profile?.timezone==="string") { try {setDate(localDate(new Date(),profile.timezone));} catch {setMessage("个人资料中的时区无效，请在设置中修正。");} } },[profile?.timezone]);
  const summary=dailySummary(data,date);
  const trend=weightTrend(data);
  const latest=trend.at(-1);

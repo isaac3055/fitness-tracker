@@ -20,8 +20,6 @@ jobs:
       - name: Resolve initial dependency lock if absent
         run: |
           if [ ! -f package-lock.json ]; then npm install --package-lock-only; fi
-      - name: Capture initial dependency manifest
-        run: node -e "console.log('LOCKFILE_DATA='+JSON.stringify(require('./package-lock.json')))"
       - run: npm ci
       - name: Dependency audit
         run: npm audit --audit-level=high

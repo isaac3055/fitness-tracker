@@ -31,7 +31,7 @@ describe("validation and date boundaries",()=>{
   expect(localDate(new Date("2026-01-01T18:00:00Z"),"Asia/Shanghai")).toBe("2026-01-02");
   expect(dayOfWeek("2026-11-23")).toBe(1);
  });
- it("keeps Monday and Friday off",()=>expect(defaultPlans.map(p=>p.day_of_week)).not.toEqual(expect.arrayContaining([1,5])));
+ it("keeps Monday and Friday off",()=>{ const days=defaultPlans.map(p=>p.day_of_week); expect(days).not.toContain(1); expect(days).not.toContain(5); });
 });
 describe("measurement provenance",()=>{
  it("takes latest imported weight and deliberate manual override",()=>{

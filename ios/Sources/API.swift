@@ -80,7 +80,11 @@ struct JSONRow: Identifiable {
  func refreshIfNeeded() async throws {
   guard let current=session else { throw TrackerError.message("请登录") }
   if (current.expires_at ?? 0)>Date().timeIntervalSince1970+90 { return }
-  if let refreshTask { let data=try await refreshTask.value;try accept(data);return }
+  if let refreshTask {
+   let data=try await refreshTask.value
+   guard session?.user.id==current.user.id else { throw TrackerError.message("账号已切换") }
+   try accept(data);return
+  }
   let task=Task { try await self.request("/auth/v1/token?grant_type=refresh_token",method:"POST",body:["refresh_token":current.refresh_token],authenticated:false) }
   refreshTask=task
   defer{refreshTask=nil}

@@ -15,6 +15,13 @@ do $$ begin
  exception when insufficient_privilege then null;
  end;
 end $$;
+do $ begin
+ begin
+  update public.body_measurements set user_id='20000000-0000-0000-0000-000000000002';
+  raise exception 'Ownership transfer unexpectedly succeeded';
+ exception when insufficient_privilege then null;
+ end;
+end $;
 select public.sync_health_batch(
  '[{"logged_on":"2026-01-01","timezone":"Asia/Shanghai","active_kcal":400,"resting_kcal":1600}]',
  '[{"sample_id":"30000000-0000-0000-0000-000000000003","measured_at":"2026-01-01T00:00:00Z","logged_on":"2026-01-01","weight_kg":80}]',

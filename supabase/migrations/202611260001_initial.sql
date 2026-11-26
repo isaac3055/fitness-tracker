@@ -96,7 +96,7 @@ begin
    execute format('alter table public.%I enable row level security',t);
    execute format('create policy own_rows on public.%I for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id)',t);
    execute format('create index %I on public.%I(user_id)',t||'_user_idx',t);
-   execute format('revoke all on public.%I from anon',t);
+   execute format('revoke all on public.%I from anon, authenticated',t);
    execute format('grant select, insert, update, delete on public.%I to authenticated',t);
  end loop;
 end $$;

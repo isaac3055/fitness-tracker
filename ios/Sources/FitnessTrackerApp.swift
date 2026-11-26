@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import HealthKit
 
 @main struct FitnessTrackerApp: App {
  @StateObject private var api=API()
@@ -147,6 +148,16 @@ struct HomeView: View {
       LabeledContent("步数",value:current?.text("steps") ?? "—")
       LabeledContent("运动分钟",value:current?.text("exercise_minutes") ?? "—")
       LabeledContent("平均心率 bpm",value:current?.text("heart_rate") ?? "—")
+     }
+     Section("已同步身体测量") {
+      ForEach((rows["health_measurements"] ?? []).sorted{$0.text("measured_at")>$1.text("measured_at")}.prefix(30).map{$0}) { row in
+       Text(row.text("logged_on")+" · "+(row.text("weight_kg").isEmpty ? "体脂 "+row.text("body_fat_percent")+"%":row.text("weight_kg")+" kg"))
+      }
+     }
+     Section("最近训练") {
+      ForEach((rows["health_workouts"] ?? []).sorted{$0.text("started_at")>$1.text("started_at")}.prefix(30).map{$0}) { row in
+       Text(row.text("logged_on")+" · "+activityName(row.text("activity_type"))+" · "+row.text("duration_minutes")+" min")
+      }
      }
      if !message.isEmpty { Section { Text(message) } }
     }.navigationTitle("健康同步")
@@ -336,5 +347,21 @@ struct PrivacyView: View {
    }
    if !message.isEmpty {Text(message)}
   }.navigationTitle("账号与隐私")
+ }
+}
+
+func activityName(_ raw:String) -> String {
+ guard let value=UInt(raw),let type=HKWorkoutActivityType(rawValue:value) else { return "其他训练" }
+ switch type {
+ case .walking:return "步行"
+ case .running:return "跑步"
+ case .cycling:return "骑行"
+ case .traditionalStrengthTraining:return "力量训练"
+ case .functionalStrengthTraining:return "功能力量训练"
+ case .hiking:return "徒步"
+ case .elliptical:return "椭圆机"
+ case .swimming:return "游泳"
+ case .yoga:return "瑜伽"
+ default:return "其他训练"
  }
 }

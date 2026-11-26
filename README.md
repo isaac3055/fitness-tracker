@@ -100,7 +100,7 @@ GitHub Actions 包括：
 - PostgreSQL 16 执行真实迁移，验证跨账号读写阻止、匿名阻止、HealthKit 幂等与删除、账号级联删除。
 - macOS 生成 iOS 工程、模拟器构建和 XCTest；模拟器测试不读取真实 HealthKit。
 
-首次 CI 解析依赖并生成 lockfile，作为 web-validation artifact 提供。固定 package-lock.json 后日常采用 npm ci；CI 仅有仓库读取权限。查看实际 Actions 结果，不能把仅新增测试文件视作已通过测试。
+package-lock.json 已固定依赖版本；采用 npm ci 安装。CI 仅有仓库读取权限，并将 lockfile 与验证产物保存为 web-validation artifact。查看实际 Actions 结果，不能把仅新增测试文件视作已通过测试。
 
 真机上线验收清单见 docs/ACCEPTANCE.md。未经真实项目配置、双账号登录与真机 HealthKit 验收，不能视为已上线成品。
 
